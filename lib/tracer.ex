@@ -48,6 +48,7 @@ defmodule Tracer do
         t |> handle(state) |> print_traces()
 
       :end ->
+        dump_trace_tree(state.trace_tree)
         :ok
     end
   end
@@ -55,57 +56,86 @@ defmodule Tracer do
   # `pid` called a traced function
   # cp's MFA is the caller's MFA
   defp handle({:trace_ts, _pid, :call, mfa, {:cp, :undefined}, ts}, %{stack: [mfa | _]} = state) do
-    %{state | last_timestamp: ts}
+    update_state(state, ts, state.stack)
   end
 
   defp handle({:trace_ts, _pid, :call, mfa, {:cp, :undefined}, ts}, %{stack: stack} = state) do
-    %{state | stack: [mfa | stack], last_timestamp: ts}
+    update_state(state, ts, [mfa | stack])
   end
 
   defp handle({:trace_ts, _pid, :call, mfa, {:cp, callerMfa}, ts}, %{stack: []} = state) do
-    %{state | stack: [mfa, callerMfa], last_timestamp: ts}
+    update_state(state, ts, [mfa, callerMfa])
   end
 
   # Collapse tail recursion
-  defp handle({:trace_ts, _pid, :call, mfa, {:cp, mfa}, _ts}, state) do
-    state
-  end
+  defp handle({:trace_ts, _pid, :call, mfa, {:cp, mfa}, _ts}, state), do: state
 
   defp handle(
          {:trace_ts, _pid, :call, mfa, {:cp, callerMfa}, ts},
          %{stack: [callerMfa | stack]} = state
        ) do
-    new_stack = [mfa, callerMfa | stack]
-    %{state | stack: new_stack, last_timestamp: ts}
+    update_state(state, ts, [mfa, callerMfa | stack])
   end
 
   defp handle({:trace_ts, _pid, :call, _mfa, {:cp, _}, ts}, %{stack: [_ | rest]} = state) do
     # TODO: collapse stack. This was probably a tail call.
     # This should map: [mfa, ..., callerMfa | rest] -> [mfa, callerMfa | rest]
-    %{state | stack: rest, last_timestamp: ts}
+    update_state(state, ts, rest)
   end
 
   # `pid` is scheduled to run
   defp handle({:trace_ts, _pid, :in, mfa, ts}, %{stack: []} = state) do
-    %{state | stack: [mfa], last_timestamp: ts}
+    update_state(state, ts, [mfa])
   end
 
   defp handle({:trace_ts, _pid, :in, _mfa, ts}, %{stack: [:sleep | rest]} = state) do
-    %{state | stack: rest, last_timestamp: ts}
+    update_state(state, ts, rest)
   end
 
   # `pid` is scheduled out
   defp handle({:trace_ts, _pid, :out, _mfa, ts}, %{stack: stack} = state) do
-    %{state | stack: [:sleep | stack], last_timestamp: ts}
+    update_state(state, ts, [:sleep | stack])
   end
 
   # `pid` returns to a function
   defp handle({:trace_ts, _pid, :return_to, mfa, ts}, %{stack: [_current, mfa | rest]} = state) do
-    %{state | stack: [mfa | rest], last_timestamp: ts}
+    update_state(state, ts, [mfa | rest])
   end
 
-  defp handle({:trace_ts, _pid, :return_to, _mfa, _ts}, state) do
-    state
+  defp handle({:trace_ts, _pid, :return_to, _mfa, _ts}, state), do: state
+
+  defp update_state(%{last_timestamp: nil} = state, ts, new_stack) do
+    %{state | last_timestamp: ts, stack: new_stack}
+  end
+
+  defp update_state(%{stack: []} = state, ts, new_stack) do
+    %{state | last_timestamp: ts, stack: new_stack}
+  end
+
+  defp update_state(%{stack: old_stack, last_timestamp: old_ts} = state, ts, new_stack) do
+    time_spent = ts - old_ts
+
+    old_stack
+    |> :lists.reverse()
+    |> then(&[state.pid | &1])
+    |> update_tree(state.trace_tree, time_spent)
+    |> then(&%{state | trace_tree: &1, last_timestamp: ts, stack: new_stack})
+  end
+
+  defp update_tree([mfa], tree, time) do
+    Map.update(tree, mfa, {time, %{}}, fn {acc, children} -> {acc + time, children} end)
+  end
+
+  defp update_tree([mfa | rest], tree, time) do
+    {acc, subtree} = Map.get(tree, mfa, {0, %{}})
+
+    update_tree(rest, subtree, time)
+    |> then(&{acc, &1})
+    |> then(&Map.put(tree, mfa, &1))
+  end
+
+  defp dump_trace_tree(tree) do
+    IO.inspect(tree)
   end
 
   defp dummy_load do
