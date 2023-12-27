@@ -2,12 +2,10 @@ defmodule Example do
   @dummy_list 0..100_000 |> Enum.to_list()
 
   def start do
-    {:ok, tracer} = Tracer.start_trace(self())
-    dummy_load()
-    Tracer.stop_trace(tracer, self())
+    Tracer.run({__MODULE__, :dummy_load, []})
   end
 
-  defp dummy_load do
+  def dummy_load do
     @dummy_list
     |> Stream.with_index()
     |> Stream.map(fn {x, y} -> x * y end)
