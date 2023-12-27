@@ -33,9 +33,10 @@ defmodule StackCollapser do
     update_state(state, ts, [mfa, callerMfa])
   end
 
-  # Collapse tail recursion
+  ## Collapse tail recursion
   def handle_event({:trace_ts, _pid, :call, mfa, {:cp, mfa}, _ts}, state), do: state
 
+  ## Non-special call
   def handle_event(
         {:trace_ts, _pid, :call, mfa, {:cp, callerMfa}, ts},
         %{stack: [callerMfa | stack]} = state
@@ -43,9 +44,9 @@ defmodule StackCollapser do
     update_state(state, ts, [mfa, callerMfa | stack])
   end
 
+  ## TCO happened, so stack is [otherMfa, callerMfa, ...]
+  ## Note that since we don't really know the "root" function, the stack could be just [otherMfa]
   def handle_event({:trace_ts, _pid, :call, _mfa, {:cp, _}, ts}, %{stack: [_ | rest]} = state) do
-    # TODO: collapse stack. This was probably a tail call.
-    # This should map: [mfa, ..., callerMfa | rest] -> [mfa, callerMfa | rest]
     update_state(state, ts, rest)
   end
 
