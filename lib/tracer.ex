@@ -1,56 +1,43 @@
 defmodule Tracer do
   @moduledoc """
-  Documentation for `Tracer`.
+  A tracer module that receives :erlang.trace generated messages, parses them into
+  a local state and prints them to the screen.
   """
 
-  @doc """
-  Hello world.
+  use GenServer
 
-  ## Examples
+  @trace_flags [:call, :arity, :return_to, :monotonic_timestamp, :running]
 
-      iex> Tracer.hello()
-      :world
+  ###########################
+  ### PUBLIC API
+  ###########################
 
-  """
-  def hello do
-    :world
-  end
-
-  @dummy_list 0..100_000 |> Enum.to_list()
-
-  def start do
-    tracer = self()
-
-    tracee =
-      spawn(fn ->
-        dummy_load()
-        send(tracer, :end)
-      end)
-
-    match_spec = [{:_, [], [{:message, {{:cp, {:caller}}}}]}]
-    :erlang.trace_pattern(:on_load, match_spec, [:local])
-    :erlang.trace_pattern({:_, :_, :_}, match_spec, [:local])
-    :erlang.trace(tracee, true, [:call, :arity, :return_to, :monotonic_timestamp, :running])
-
-    StackCollapser.initial_state(tracee)
-    |> process_trace()
-  end
-
-  defp process_trace(state) do
-    receive do
-      t when elem(t, 0) === :trace_ts ->
-        t |> StackCollapser.handle_event(state) |> process_trace()
-
-      :end ->
-        StackCollapser.finalize(state)
-        :ok
+  def start_trace(pid) do
+    with {:ok, tracer} <- GenServer.start_link(__MODULE__, pid) do
+      match_spec = [{:_, [], [{:message, {{:cp, {:caller}}}}]}]
+      :erlang.trace_pattern(:on_load, match_spec, [:local])
+      :erlang.trace_pattern({:_, :_, :_}, match_spec, [:local])
+      :erlang.trace(pid, true, [{:tracer, tracer} | @trace_flags])
+      {:ok, tracer}
     end
   end
 
-  defp dummy_load do
-    @dummy_list
-    |> Stream.with_index()
-    |> Stream.map(fn {x, y} -> x * y end)
-    |> Enum.reduce(0, fn x, acc -> x + acc end)
+  def stop_trace(tracer), do: GenServer.call(tracer, :stop)
+
+  ###########################
+  ### GENSERVER CALLBACKS
+  ###########################
+  def init(pid) do
+    {:ok, StackCollapser.initial_state(pid)}
+  end
+
+  def handle_info(t, state) when elem(t, 0) === :trace_ts do
+    new_state = StackCollapser.handle_event(t, state)
+    {:noreply, new_state}
+  end
+
+  def handle_call(:stop, _, state) do
+    StackCollapser.finalize(state)
+    {:stop, :normal, :ok, state}
   end
 end
