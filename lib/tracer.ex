@@ -18,7 +18,7 @@ defmodule Tracer do
 
   @type state() :: %{last_timestamp: integer(), trace_tree: %{}, stack: [mfa()], pid: pid()}
 
-  @dummy_list 0..100 |> Enum.to_list()
+  @dummy_list 0..100_000 |> Enum.to_list()
 
   def start do
     tracer = self()
@@ -135,8 +135,30 @@ defmodule Tracer do
   end
 
   defp dump_trace_tree(tree) do
-    IO.inspect(tree)
+    tree
+    |> flatten_tree()
+    |> then(&File.write!("trace.out", &1))
   end
+
+  defp flatten_tree(tree, stack \\ []) do
+    tree
+    |> Enum.map(fn {mfa, {time, children}} ->
+      id = stringify_id(mfa)
+      stack = [id | stack]
+      subtree = flatten_tree(children, stack)
+      [format_entry(stack, time) | subtree]
+    end)
+  end
+
+  defp format_entry(stack, time) do
+    :lists.reverse(stack)
+    |> Stream.intersperse(";")
+    |> Enum.concat([" #{time}\n"])
+  end
+
+  defp stringify_id({m, f, a}), do: "#{m}.#{f}/#{a}"
+  defp stringify_id(pid) when is_pid(pid), do: :erlang.pid_to_list(pid) |> List.to_string()
+  defp stringify_id(:sleep), do: "sleep"
 
   defp dummy_load do
     @dummy_list
