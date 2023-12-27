@@ -1,9 +1,10 @@
 defmodule Example do
-  @dummy_list 0..1000 |> Enum.to_list()
+  @dummy_list 0..100_000 |> Enum.to_list()
 
   def start do
-    tracee = spawn(fn -> dummy_load() end)
-    Tracer.trace(tracee)
+    {:ok, tracer} = Tracer.start_trace(self())
+    dummy_load()
+    Tracer.stop_trace(tracer, self())
   end
 
   defp dummy_load do
@@ -11,7 +12,5 @@ defmodule Example do
     |> Stream.with_index()
     |> Stream.map(fn {x, y} -> x * y end)
     |> Enum.reduce(0, fn x, acc -> x + acc end)
-
-    dummy_load()
   end
 end

@@ -6,28 +6,44 @@ defmodule Tracer do
 
   use GenServer
 
+  @trace_flags [:call, :arity, :return_to, :monotonic_timestamp, :running]
+
+  @default_timeout 20_000
+
   ###########################
   ### PUBLIC API
   ###########################
 
-  def trace(pid) do
-    GenServer.start_link(__MODULE__, pid)
+  def start_trace(target) do
+    with {:ok, tracer} <- GenServer.start_link(__MODULE__, target) do
+      match_spec = [{:_, [], [{:message, {{:cp, {:caller}}}}]}]
+      :erlang.trace_pattern(:on_load, match_spec, [:local])
+      :erlang.trace_pattern({:_, :_, :_}, match_spec, [:local])
+      :erlang.trace(target, true, [{:tracer, tracer} | @trace_flags])
+      {:ok, tracer}
+    end
+  end
+
+  def stop_trace(tracer, target) do
+    :erlang.trace(target, false, [:all])
+    GenServer.call(tracer, :finalize, @default_timeout)
+    GenServer.stop(tracer)
   end
 
   ###########################
   ### GENSERVER CALLBACKS
   ###########################
   def init(pid) do
-    match_spec = [{:_, [], [{:message, {{:cp, {:caller}}}}]}]
-    :erlang.trace_pattern(:on_load, match_spec, [:local])
-    :erlang.trace_pattern({:_, :_, :_}, match_spec, [:local])
-    :erlang.trace(pid, true, [:call, :arity, :return_to, :timestamp, :running])
-    {:ok, %{}}
+    {:ok, StackCollapser.initial_state(pid)}
   end
 
-  def handle_info(t, state) do
-    :trace_ts = elem(t, 0)
-    IO.inspect(t)
-    {:noreply, state}
+  def handle_info(t, state) when elem(t, 0) === :trace_ts do
+    new_state = StackCollapser.handle_event(t, state)
+    {:noreply, new_state}
+  end
+
+  def handle_call(:finalize, _, state) do
+    StackCollapser.finalize(state)
+    {:reply, :ok, state}
   end
 end
