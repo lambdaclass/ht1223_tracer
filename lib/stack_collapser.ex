@@ -5,6 +5,8 @@ defmodule StackCollapser do
 
   @type state() :: %{last_timestamp: integer(), trace_tree: %{}, stack: [mfa()], pid: pid()}
 
+  @default_output_file "stacks.out"
+
   ##############
   # PUBLIC API #
   ##############
@@ -86,6 +88,8 @@ defmodule StackCollapser do
     %{state | last_timestamp: ts, stack: new_stack}
   end
 
+  defp update_state(%{last_timestamp: ts} = state, ts, _), do: state
+
   defp update_state(%{stack: old_stack, last_timestamp: old_ts} = state, ts, new_stack) do
     time_spent = ts - old_ts
 
@@ -111,7 +115,7 @@ defmodule StackCollapser do
   defp dump_trace_tree(tree) do
     tree
     |> flatten_tree()
-    |> then(&File.write!("trace.out", &1))
+    |> then(&File.write!(@default_output_file, &1))
   end
 
   defp flatten_tree(tree, stack \\ []) do
@@ -123,6 +127,8 @@ defmodule StackCollapser do
       [format_entry(stack, time) | subtree]
     end)
   end
+
+  defp format_entry(_, 0), do: ""
 
   defp format_entry(stack, time) do
     :lists.reverse(stack)
