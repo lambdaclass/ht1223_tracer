@@ -7,6 +7,7 @@ defmodule Tracer do
   use GenServer
 
   @default_mode :normal
+  @default_backend StackCollapser
 
   ###########################
   ### PUBLIC API
@@ -42,7 +43,10 @@ defmodule Tracer do
   ###########################
   ### GENSERVER CALLBACKS
   ###########################
-  def init({pid, opts}), do: {:ok, StackCollapser.initial_state(pid, opts)}
+  def init({pid, opts}) do
+    backend = Keyword.get(opts, :backend, @default_backend)
+    {:ok, apply(backend, :initial_state, [pid, opts])}
+  end
 
   def handle_info(t, state) when elem(t, 0) === :trace_ts do
     new_state = StackCollapser.handle_event(t, state)
