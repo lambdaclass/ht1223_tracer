@@ -12,17 +12,20 @@ defmodule Tracer do
   ### PUBLIC API
   ###########################
 
-  def start_trace(pid) do
-    with {:ok, tracer} <- GenServer.start_link(__MODULE__, pid) do
+  def start_trace(target) do
+    with {:ok, tracer} <- GenServer.start_link(__MODULE__, target) do
       match_spec = [{:_, [], [{:message, {{:cp, {:caller}}}}]}]
       :erlang.trace_pattern(:on_load, match_spec, [:local])
       :erlang.trace_pattern({:_, :_, :_}, match_spec, [:local])
-      :erlang.trace(pid, true, [{:tracer, tracer} | @trace_flags])
+      :erlang.trace(target, true, [{:tracer, tracer} | @trace_flags])
       {:ok, tracer}
     end
   end
 
-  def stop_trace(tracer), do: GenServer.call(tracer, :stop)
+  def stop_trace(tracer, target) do
+    :erlang.trace(target, false, [:all])
+    GenServer.call(tracer, :stop)
+  end
 
   ###########################
   ### GENSERVER CALLBACKS

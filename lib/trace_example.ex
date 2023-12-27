@@ -4,7 +4,7 @@ defmodule Example do
   def start do
     {:ok, tracer} = Tracer.start_trace(self())
     dummy_load()
-    Tracer.stop_trace(tracer)
+    Tracer.stop_trace(tracer, self())
   end
 
   defp dummy_load do
