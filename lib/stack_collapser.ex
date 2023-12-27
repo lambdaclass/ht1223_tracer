@@ -7,9 +7,9 @@ defmodule StackCollapser do
 
   @default_output_file "stacks.out"
 
-  ##############
-  # PUBLIC API #
-  ##############
+  ###########################
+  ### PUBLIC API
+  ###########################
 
   def initial_state(pid) when is_pid(pid),
     do: %{pid: pid, last_timestamp: nil, trace_tree: %{}, stack: []}
@@ -76,9 +76,9 @@ defmodule StackCollapser do
 
   def handle_event({:trace_ts, _pid, :return_to, _mfa, _ts}, state), do: state
 
-  ####################
-  # PRIVATE FUNCTION #
-  ####################
+  ###########################
+  ### PRIVATE FUNCTIONS
+  ###########################
 
   defp update_state(%{last_timestamp: nil} = state, ts, new_stack) do
     %{state | last_timestamp: ts, stack: new_stack}
