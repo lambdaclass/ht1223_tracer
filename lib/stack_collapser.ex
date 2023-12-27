@@ -46,10 +46,10 @@ defmodule StackCollapser do
     update_state(state, ts, [mfa, callerMfa | stack])
   end
 
-  ## TCO happened, so stack is [otherMfa, callerMfa, ...]
+  ## TCO happened, so stack is [otherMfa, ..., callerMfa, ...]
   ## Note that since we don't really know the "root" function, the stack could be just [otherMfa]
-  def handle_event({:trace_ts, _pid, :call, _mfa, {:cp, _}, ts}, %{stack: [_ | rest]} = state) do
-    update_state(state, ts, rest)
+  def handle_event({:trace_ts, _pid, :call, _mfa, {:cp, _}, _} = t, %{stack: [_ | rest]} = state) do
+    handle_event(t, %{state | stack: rest})
   end
 
   # `pid` is scheduled to run

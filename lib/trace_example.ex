@@ -1,5 +1,5 @@
 defmodule Example do
-  @dummy_list 0..1_000_000 |> Enum.to_list()
+  @dummy_list 0..100_000 |> Enum.to_list()
 
   def start do
     {:ok, tracer} = Tracer.start_trace(self())

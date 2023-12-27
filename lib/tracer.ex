@@ -8,6 +8,8 @@ defmodule Tracer do
 
   @trace_flags [:call, :arity, :return_to, :monotonic_timestamp, :running]
 
+  @default_timeout 20_000
+
   ###########################
   ### PUBLIC API
   ###########################
@@ -24,7 +26,7 @@ defmodule Tracer do
 
   def stop_trace(tracer, target) do
     :erlang.trace(target, false, [:all])
-    GenServer.call(tracer, :finalize)
+    GenServer.call(tracer, :finalize, @default_timeout)
     GenServer.stop(tracer)
   end
 
