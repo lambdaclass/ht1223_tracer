@@ -91,13 +91,11 @@ defmodule StackCollapser do
   defp update_state(%{last_timestamp: ts} = state, ts, _), do: state
 
   defp update_state(%{stack: old_stack, last_timestamp: old_ts} = state, ts, new_stack) do
-    time_spent = ts - old_ts
+    new_tree =
+      [state.pid | :lists.reverse(old_stack)]
+      |> update_tree(state.trace_tree, ts - old_ts)
 
-    old_stack
-    |> :lists.reverse()
-    |> then(&[state.pid | &1])
-    |> update_tree(state.trace_tree, time_spent)
-    |> then(&%{state | trace_tree: &1, last_timestamp: ts, stack: new_stack})
+    %{state | trace_tree: new_tree, last_timestamp: ts, stack: new_stack}
   end
 
   defp update_tree([mfa], tree, time) do

@@ -24,7 +24,8 @@ defmodule Tracer do
 
   def stop_trace(tracer, target) do
     :erlang.trace(target, false, [:all])
-    GenServer.call(tracer, :stop)
+    GenServer.call(tracer, :finalize)
+    GenServer.stop(tracer)
   end
 
   ###########################
@@ -39,8 +40,8 @@ defmodule Tracer do
     {:noreply, new_state}
   end
 
-  def handle_call(:stop, _, state) do
+  def handle_call(:finalize, _, state) do
     StackCollapser.finalize(state)
-    {:stop, :normal, :ok, state}
+    {:reply, :ok, state}
   end
 end
