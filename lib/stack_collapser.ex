@@ -5,7 +5,7 @@ defmodule StackCollapser do
 
   @opaque state() :: %{
             last_ts: integer(),
-            trace_tree: %{},
+            samples: %{[mfa() | :sleep] => non_neg_integer()},
             stack: [mfa()],
             pid: pid(),
             opts: opts_map()
@@ -24,11 +24,11 @@ defmodule StackCollapser do
     file = Keyword.get(opts, :output_file, @default_output_file)
     sample_size = Keyword.get(opts, :sample_size, @default_sample_size)
     parsed_opts = %{file: file, sample_size: sample_size}
-    %{pid: pid, last_ts: nil, trace_tree: %{}, stack: [], opts: parsed_opts}
+    %{pid: pid, last_ts: nil, samples: %{}, stack: [], opts: parsed_opts}
   end
 
-  def finalize(%{trace_tree: tree, opts: %{file: file}}) do
-    dump_trace_tree(tree, file)
+  def finalize(%{samples: samples, opts: %{file: file}}) do
+    dump_trace(samples, file)
   end
 
   def handle_event(trace_event, state)
@@ -112,52 +112,31 @@ defmodule StackCollapser do
     if delta < 1 do
       %{state | stack: new_stack}
     else
-      new_tree =
-        [state.pid | :lists.reverse(old_stack)]
-        |> update_tree(state.trace_tree, delta)
-
+      new_samples = Map.update(state.samples, old_stack, delta, &(&1 + delta))
       new_ts = old_ts + delta * sample_size
-      %{state | trace_tree: new_tree, last_ts: new_ts, stack: new_stack}
+      %{state | samples: new_samples, last_ts: new_ts, stack: new_stack}
     end
   end
 
-  defp update_tree([mfa], tree, time) do
-    Map.update(tree, mfa, {time, %{}}, fn {acc, children} -> {acc + time, children} end)
-  end
-
-  defp update_tree([mfa | rest], tree, time) do
-    {acc, subtree} = Map.get(tree, mfa, {0, %{}})
-
-    update_tree(rest, subtree, time)
-    |> then(&{acc, &1})
-    |> then(&Map.put(tree, mfa, &1))
-  end
-
-  defp dump_trace_tree(tree, file) do
-    tree
-    |> flatten_tree()
-    |> then(&File.write!(file, &1))
-  end
-
-  defp flatten_tree(tree, stack \\ []) do
-    tree
-    |> Enum.map(fn {mfa, {time, children}} ->
-      id = stringify_id(mfa)
-      stack = [id | stack]
-      subtree = flatten_tree(children, stack)
-      [format_entry(stack, time) | subtree]
+  defp dump_trace(samples, file) do
+    samples
+    |> Enum.map(fn {stack, sample_count} ->
+      stack
+      |> Enum.map(&stringify_id/1)
+      |> format_entry(sample_count)
     end)
+    |> then(&File.write!(file, &1))
   end
 
   defp format_entry(_, 0), do: ""
 
-  defp format_entry(stack, time) do
+  defp format_entry(stack, sample_count) do
     :lists.reverse(stack)
     |> Stream.intersperse(";")
-    |> Enum.concat([" #{time}\n"])
+    |> Enum.concat([" #{sample_count}\n"])
   end
 
   defp stringify_id({m, f, a}), do: "#{m}.#{f}/#{a}"
-  defp stringify_id(pid) when is_pid(pid), do: :erlang.pid_to_list(pid) |> List.to_string()
+  defp stringify_id(pid) when is_pid(pid), do: :erlang.pid_to_list(pid)
   defp stringify_id(:sleep), do: "sleep"
 end
