@@ -35,7 +35,7 @@ They currently feature a simple example of stream processing.
 In elixir, if we want to produce a flamegraph for the execution of the function `my_function(arg1, arg2)`, we need to run:
 
 ```elixir
-Tracer.run({:my_function, [arg1, arg2]})
+Tracer.run({&my_function/2, [arg1, arg2]})
 ```
 
 Additionally, if the function is in a different module, this can be specified as:
@@ -56,7 +56,7 @@ chmod +x flamegraph.pl
 ./flamegraph.pl stacks.out > flamegraph.svg
 ```
 
-The resulting svg can be open in an internet browser like Google Chrome, for interactive exploring (e.g. hovering over the a function call in a stack displays its full name).
+The resulting svg can be opened in an internet browser like Google Chrome, for interactive exploring (e.g. hovering over the a function call in a stack displays its full name).
 
 ## Architecture and design
 
