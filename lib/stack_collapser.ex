@@ -11,7 +11,7 @@ defmodule StackCollapser do
             opts: opts_map()
           }
   @opaque opts_map() :: %{file: Path.t(), sample_size: non_neg_integer()}
-  @type opts() :: [file: Path.t(), sample_size: non_neg_integer()]
+  @type opts() :: [output_file: Path.t(), sample_size: non_neg_integer()]
 
   @default_output_file "stacks.out"
   @default_sample_size 1_000
@@ -27,8 +27,8 @@ defmodule StackCollapser do
     %{pid: pid, last_ts: nil, samples: %{}, stack: [], opts: parsed_opts}
   end
 
-  def finalize(%{samples: samples, opts: %{file: file}}) do
-    dump_trace(samples, file)
+  def finalize(%{samples: samples, pid: pid, opts: %{file: file}}) do
+    dump_trace(samples, pid, file)
   end
 
   def handle_event(trace_event, state)
@@ -122,20 +122,20 @@ defmodule StackCollapser do
     end
   end
 
-  defp dump_trace(samples, file) do
+  defp dump_trace(samples, pid, file) do
     samples
     |> Enum.map(fn {stack, sample_count} ->
       stack
       |> Enum.map(&stringify_id/1)
-      |> format_entry(sample_count)
+      |> format_entry(pid, sample_count)
     end)
     |> then(&File.write!(file, &1))
   end
 
-  defp format_entry(_, 0), do: ""
+  defp format_entry(_, _, 0), do: ""
 
-  defp format_entry(stack, sample_count) do
-    :lists.reverse(stack)
+  defp format_entry(stack, pid, sample_count) do
+    [stringify_id(pid) | :lists.reverse(stack)]
     |> Stream.intersperse(";")
     |> Enum.concat([" #{sample_count}\n"])
   end
