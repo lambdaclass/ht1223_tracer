@@ -11,10 +11,13 @@ defmodule StackCollapser do
   ### PUBLIC API
   ###########################
 
-  def initial_state(pid) when is_pid(pid),
-    do: %{pid: pid, last_timestamp: nil, trace_tree: %{}, stack: []}
+  def initial_state(pid, opts) when is_pid(pid),
+    do: %{pid: pid, last_timestamp: nil, trace_tree: %{}, stack: [], opts: opts}
 
-  def finalize(%{trace_tree: tree}), do: dump_trace_tree(tree)
+  def finalize(%{trace_tree: tree, opts: opts}) do
+    file = Keyword.get(opts, :output_file, @default_output_file)
+    dump_trace_tree(tree, file)
+  end
 
   def handle_event(trace_event, state)
 
@@ -110,10 +113,10 @@ defmodule StackCollapser do
     |> then(&Map.put(tree, mfa, &1))
   end
 
-  defp dump_trace_tree(tree) do
+  defp dump_trace_tree(tree, file) do
     tree
     |> flatten_tree()
-    |> then(&File.write!(@default_output_file, &1))
+    |> then(&File.write!(file, &1))
   end
 
   defp flatten_tree(tree, stack \\ []) do
