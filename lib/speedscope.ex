@@ -30,7 +30,7 @@ defmodule SpeedScope do
   def finalize(%{stack: stack, events: [%{at: last_at} | _]} = state) do
     %{frames: frames, events: events, opts: %{file: file}} =
       Enum.reduce(stack, state, fn mfa, state ->
-        add_event(state, :C, last_at, mfa)
+        add_event(state, :C, state.last_ts, mfa)
       end)
 
     {:ok, f} = File.open(file, [:write])
@@ -156,18 +156,7 @@ defmodule SpeedScope do
         0
       else
         %{at: old_at} = List.first(events)
-        new_at = ts - last_ts + old_at
-
-        # if new_at > 576_460_751_683_392 do
-        # IO.inspect(mfa, label: "mfa")
-        # IO.inspect(state.stack, label: "stack")
-        IO.inspect(ts, label: "ts")
-        IO.inspect(last_ts, label: "last_ts")
-        IO.inspect(old_at, label: "old_at")
-        IO.inspect(new_at, label: "aaaaaaa")
-        # end
-
-        new_at
+        ts - last_ts + old_at
       end
 
     {new_frames, i} =

@@ -50,7 +50,6 @@ defmodule Tracer do
   end
 
   def handle_info(t, {state, backend}) when elem(t, 0) === :trace_ts do
-    IO.inspect(t, label: "t")
     new_state = apply(backend, :handle_event, [t, state])
     {:noreply, {new_state, backend}}
   end
