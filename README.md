@@ -164,15 +164,26 @@ Up to this point, the caller remains the `run` function. This happens because th
 
 However, `:eval_polinomial/4` calls the exponentiation in a simple call, as its return value will be used for the recursive call. That means that we have the following sequence:
 
-| caller                     | called             | return_to                  |
-| -------------------------- | ------------------ | -------------------------- |
-| `{M, :eval_polinomial, 4}` | `{Kernel, :**, 2}` |                            |
-|                            |                    | `{M, :eval_polinomial, 4}` |
+- Call from `{M, :eval_polinomial, 4}` to `{Kernel, :**, 2}`.
+- Return to `{M, :eval_polinomial, 4}`.
 
 In this case, we clearly see the `M.eval_polinomial/4` function being the caller and then a return event going in that direction.
 
 We then see the last three events (call to `eval_polinomial` from `run`, call to exponentiation, return to eval_polinomial) repeated many times, before finally returning to the `run` function in the last recursive call.
 
-### How do we update our state according to events?
+### How do we update our stack according to events?
 
 TCO is extremely useful for saving memory but it also deletes valuable information from the stack. Usually, we care about who actually called who to be able to debug. For this reason, we need to keep track of the unoptimized stack ourselves, and keep a stack tree to write the flamegraph.
+
+Let's say a `call` happened. Depending on our internal state and the event itself, we will update it differently:
+
+- If our stack is empty, our new stack will be `[callee, caller]`. This is our initialization.
+- If the caller and callee are the same, then it's a recursive call, so we don't update the state at all.
+- If the caller is the head of our stack, we're in a simple call, so we just add the `callee` to the stack.
+- The main complex case comes when the caller is NOT the head of the stack. That means that there was a TCO like we described in the previous section. In turn, that means the caller (as described by the event) is buried in the stack and we don't know for sure which function between the head and the event caller is the actual caller. For this reason, we just remove elements from the stack until we reach that caller, and add the callee as per the previous case.
+
+Other events are:
+
+- `return_to`: we remove the head of the stack, as we returned from the function to the caller. If the member beneath the head is not the caller, for now, we ignore the event, although this edge case needs further review.
+- `out`: the scheduler decides to stop the process from running. We add `:sleep` as a marker for this in the stack.
+- `in`: the scheduler decides it's this pid's turn to run again, so we remove the `:sleep` marker from the stack.
