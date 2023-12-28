@@ -22,7 +22,7 @@ defmodule StackCollapser do
   def handle_event(trace_event, state)
 
   # `pid` called a traced function
-  # cp's MFA is the caller's MFA
+  # cp contains the caller's MFA
   def handle_event(
         {:trace_ts, _pid, :call, mfa, {:cp, :undefined}, ts},
         %{stack: [mfa | _]} = state
@@ -39,7 +39,11 @@ defmodule StackCollapser do
   end
 
   ## Collapse tail recursion
-  def handle_event({:trace_ts, _pid, :call, mfa, {:cp, mfa}, _ts}, state), do: state
+  def handle_event(
+        {:trace_ts, _pid, :call, mfa, {:cp, callerMfa}, _ts},
+        %{stack: [mfa, callerMfa | _]} = state
+      ),
+      do: state
 
   ## Non-special call
   def handle_event(
