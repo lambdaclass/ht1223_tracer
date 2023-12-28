@@ -106,7 +106,8 @@ defmodule StackCollapser do
   defp update_state(%{last_ts: ts} = state, ts, _), do: state
 
   defp update_state(%{stack: old_stack, last_ts: old_ts, opts: opts} = state, ts, new_stack) do
-    delta = div(ts - old_ts, opts.sample_size)
+    %{sample_size: sample_size} = opts
+    delta = div(ts - old_ts, sample_size)
 
     if delta < 1 do
       %{state | stack: new_stack}
@@ -115,7 +116,8 @@ defmodule StackCollapser do
         [state.pid | :lists.reverse(old_stack)]
         |> update_tree(state.trace_tree, delta)
 
-      %{state | trace_tree: new_tree, last_ts: ts, stack: new_stack}
+      new_ts = old_ts + delta * sample_size
+      %{state | trace_tree: new_tree, last_ts: new_ts, stack: new_stack}
     end
   end
 
