@@ -74,3 +74,105 @@ When the function finishes, then:
 3. After this finishes (or there's a timeout) the Tracer process will be stopped.
 
 A timeout will mean that the Tracer GenServer did not finish processing the trace messages in a reasonable amount of time after the call to stop happened. This usually happens when the amount of events to process was very high and stacks very deep. Consider increasing the timeout if that happens.
+
+### How do we represent a flamegraph?
+
+The most typical use case is to build a flamegraph for a simple function call. Let's use this example:
+
+```elixir
+defmodule M do
+  def eval_polinomial(coefs, x), do: eval_polinomial(coefs, x, 0, 0)
+  def eval_polinomial([], _x, _i, acc), do: acc
+
+  def eval_polinomial([c | other_coefs], x, i, acc) do
+    eval_polinomial(other_coefs, x, i + 1, acc + c * x ** i)
+  end
+
+  def do_something_else(0), do: 0
+  def do_something_else(n), do: do_something_else(n - 1)
+end
+
+defmodule Example do
+  def p(x) do
+    M.eval_polinomial([10, 4, 7, 3], x)
+  end
+end
+
+Tracer.run({Example, :p, [10]})
+```
+
+Conceptually speaking, what p does is compute a polinomial. For a certain x, it returns $10+4x+7x^2+3x^3$. But regarding execution:
+
+1. We call `Tracer.run`.
+2. `Tracer.run`, internally, calls `apply_fun`.
+3. `apply_fun` calls `Example.p(10)`.
+4. `Example.p(10)` calls `M.eval_polinomial([10,4,7,3], 10)`.
+5. That function is just a helper for the tail recursive function `M.eval_polinomial([10,4,7,3], 10, 0, 0)`, where the last two values are accumulators.
+6. The tail recursive function calls itself a bunch of times, eventually returning to the root function, which is `Example.p`.
+
+A simple flamegraph would contain all of this calls in order:
+
+- `Tracer.run` at the base
+- `apply_fun`
+- `Example.p/1`
+- `M.eval_polinomial/2`
+- `M.eval_polinomial/4`
+- `Kernel.integer_pow/2` (exponentiation)
+
+This is a simple stack, as each function anly calls one other function. If instead we did something like this:
+
+```elixir
+def p(x) do
+    n = M.eval_polinomial([10, 4, 7, 3], x)
+    M.do_something_else(100) # This is just 100 empty calls, to take some time.
+    n
+end
+```
+
+Then our stack, after returning from `M.eval_polinomial` would build:
+
+- `Tracer.run` at the base
+- `apply_fun`
+- `Example.p/1`
+- `do_something_else/1`
+
+To build this, our tracer will maintain, at all times, two important things:
+
+- The current stack.
+- The stack tree, each call with the accumulated timestamp.
+- The last timestamp we got, so that we can compare in each event and calculate how much time has passed.
+
+### Trace events explained by example
+
+Trace events arrive to the tracer in tuples of the following shape:
+
+```elixir
+{:trace_ts, pid, :call, called_mfa, {:cp, caller_mfa}, timestamp_nanoseconds}
+```
+
+where `mfa` is a tuple of three elements: `{module, function, arity}`, which is a unique identifier of a function. Our example in the previous section, when being traced, yields the following event mfas:
+
+| caller              | called                     |
+| ------------------- | -------------------------- |
+| `{Tracer, :run, 2}` | `{Tracer, :apply_fun, 2}`  |
+| `{Tracer, :run, 2}` | `{Example, :p, 1}`         |
+| `{Tracer, :run, 2}` | `{M, :eval_polinomial, 2}` |
+| `{Tracer, :run, 2}` | `{M, :eval_polinomial, 4}` |
+
+
+Up to this point, the caller remains the `run` function. This happens because the `caller_mfa` is not the immediate caller, but the function where we will return once the current call is finished. This is important, as tail calls, which is functions that call another function as the absolute last thing they do. Tail calls are subject to TCO (tail call optimization), which means that their stack frame is deleted when doing the call. This is reflected in the examples, as `apply_fun`, `Example.p`, `eval_polinomial/2`, all perform tail calls. 
+
+However, `:eval_polinomial/4` calls the exponentiation in a simple call, as its return value will be used for the recursive call. That means that we have the following sequence:
+
+| caller                     | called             | return_to                  |
+| -------------------------- | ------------------ | -------------------------- |
+| `{M, :eval_polinomial, 4}` | `{Kernel, :**, 2}` |                            |
+|                            |                    | `{M, :eval_polinomial, 4}` |
+
+In this case, we clearly see the `M.eval_polinomial/4` function being the caller and then a return event going in that direction.
+
+We then see the last three events (call to `eval_polinomial` from `run`, call to exponentiation, return to eval_polinomial) repeated many times, before finally returning to the `run` function in the last recursive call.
+
+### How do we update our state according to events?
+
+TCO is extremely useful for saving memory but it also deletes valuable information from the stack. Usually, we care about who actually called who to be able to debug. For this reason, we need to keep track of the unoptimized stack ourselves, and keep a stack tree to write the flamegraph.
