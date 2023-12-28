@@ -6,35 +6,46 @@ defmodule Tracer do
 
   use GenServer
 
-  @trace_flags [:call, :arity, :return_to, :monotonic_timestamp, :running]
-
-  @default_timeout 20_000
+  @default_mode :normal
+  @default_backend StackCollapser
 
   ###########################
   ### PUBLIC API
   ###########################
 
-  def start_trace(target) do
-    with {:ok, tracer} <- GenServer.start_link(__MODULE__, target) do
+  def start_trace(target, opts \\ []) do
+    with {:ok, tracer} <- GenServer.start_link(__MODULE__, {target, opts}) do
       match_spec = [{:_, [], [{:message, {{:cp, {:caller}}}}]}]
       :erlang.trace_pattern(:on_load, match_spec, [:local])
       :erlang.trace_pattern({:_, :_, :_}, match_spec, [:local])
-      :erlang.trace(target, true, [{:tracer, tracer} | @trace_flags])
+      :erlang.trace(target, true, [{:tracer, tracer} | trace_flags(opts)])
       {:ok, tracer}
     end
   end
 
-  def stop_trace(tracer, target) do
+  def stop_trace(tracer, target, timeout \\ :infinity) do
     :erlang.trace(target, false, [:all])
-    GenServer.call(tracer, :finalize, @default_timeout)
+    GenServer.call(tracer, :finalize, timeout)
     GenServer.stop(tracer)
+  end
+
+  @base_flags [:call, :arity, :return_to, :monotonic_timestamp, :running]
+
+  defp trace_flags(opts) do
+    mode = Keyword.get(opts, :mode, @default_mode)
+
+    case mode do
+      :normal -> @base_flags
+      :normal_with_children -> [:set_on_spawn | @base_flags]
+    end
   end
 
   ###########################
   ### GENSERVER CALLBACKS
   ###########################
-  def init(pid) do
-    {:ok, StackCollapser.initial_state(pid)}
+  def init({pid, opts}) do
+    backend = Keyword.get(opts, :backend, @default_backend)
+    {:ok, apply(backend, :initial_state, [pid, opts])}
   end
 
   def handle_info(t, state) when elem(t, 0) === :trace_ts do
