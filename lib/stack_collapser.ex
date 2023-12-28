@@ -3,19 +3,31 @@ defmodule StackCollapser do
   Stack collapsing implementation.
   """
 
-  @type state() :: %{last_timestamp: integer(), trace_tree: %{}, stack: [mfa()], pid: pid()}
+  @opaque state() :: %{
+            last_ts: integer(),
+            trace_tree: %{},
+            stack: [mfa()],
+            pid: pid(),
+            opts: opts_map()
+          }
+  @opaque opts_map() :: %{file: Path.t(), sample_size: non_neg_integer()}
+  @type opts() :: [file: Path.t(), sample_size: non_neg_integer()]
 
   @default_output_file "stacks.out"
+  @default_sample_size 1_000
 
   ###########################
   ### PUBLIC API
   ###########################
 
-  def initial_state(pid, opts) when is_pid(pid),
-    do: %{pid: pid, last_timestamp: nil, trace_tree: %{}, stack: [], opts: opts}
-
-  def finalize(%{trace_tree: tree, opts: opts}) do
+  def initial_state(pid, opts) when is_pid(pid) do
     file = Keyword.get(opts, :output_file, @default_output_file)
+    sample_size = Keyword.get(opts, :sample_size, @default_sample_size)
+    parsed_opts = %{file: file, sample_size: sample_size}
+    %{pid: pid, last_ts: nil, trace_tree: %{}, stack: [], opts: parsed_opts}
+  end
+
+  def finalize(%{trace_tree: tree, opts: %{file: file}}) do
     dump_trace_tree(tree, file)
   end
 
@@ -83,22 +95,28 @@ defmodule StackCollapser do
   ### PRIVATE FUNCTIONS
   ###########################
 
-  defp update_state(%{last_timestamp: nil} = state, ts, new_stack) do
-    %{state | last_timestamp: ts, stack: new_stack}
+  defp update_state(%{last_ts: nil} = state, ts, new_stack) do
+    %{state | last_ts: ts, stack: new_stack}
   end
 
   defp update_state(%{stack: []} = state, ts, new_stack) do
-    %{state | last_timestamp: ts, stack: new_stack}
+    %{state | last_ts: ts, stack: new_stack}
   end
 
-  defp update_state(%{last_timestamp: ts} = state, ts, _), do: state
+  defp update_state(%{last_ts: ts} = state, ts, _), do: state
 
-  defp update_state(%{stack: old_stack, last_timestamp: old_ts} = state, ts, new_stack) do
-    new_tree =
-      [state.pid | :lists.reverse(old_stack)]
-      |> update_tree(state.trace_tree, ts - old_ts)
+  defp update_state(%{stack: old_stack, last_ts: old_ts, opts: opts} = state, ts, new_stack) do
+    delta = div(ts - old_ts, opts.sample_size)
 
-    %{state | trace_tree: new_tree, last_timestamp: ts, stack: new_stack}
+    if delta < 1 do
+      %{state | stack: new_stack}
+    else
+      new_tree =
+        [state.pid | :lists.reverse(old_stack)]
+        |> update_tree(state.trace_tree, delta)
+
+      %{state | trace_tree: new_tree, last_ts: ts, stack: new_stack}
+    end
   end
 
   defp update_tree([mfa], tree, time) do
