@@ -1,12 +1,11 @@
-defmodule Tracer.MixProject do
+defmodule Flama.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :tracer,
+      app: :flama,
       version: "0.1.0",
       elixir: "~> 1.15",
-      start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
   end
