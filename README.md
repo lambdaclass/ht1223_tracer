@@ -60,6 +60,25 @@ The resulting svg can be opened in an internet browser like Google Chrome, for i
 
 ## Architecture and design
 
+```mermaid
+sequenceDiagram
+
+participant caller as Caller process
+participant flama as Flama Tracer
+participant b as BEAM
+
+caller ->>+ caller: Flama.run(target_function)
+caller ->>+ flama: start_trace
+flama ->> b: :erlang.trace_pattern()
+flama ->>- b: :erlang.trace(caller_pid, true)
+caller -> caller: apply_fun(target_function)
+b ->>+ flama: trace_events
+flama ->>- flama: update_state()
+caller ->>- flama: stop_trace
+flama ->> b: :erlang.trace(caller_pid, false)
+flama ->> flama: format_trace, File.write!
+```
+
 A simple call to `Tracer.run` will:
 
 1. Spawn a Tracer process.
