@@ -206,3 +206,18 @@ Other events are:
 - `return_to`: we remove the head of the stack, as we returned from the function to the caller. If the member beneath the head is not the caller, for now, we ignore the event, although this edge case needs further review.
 - `out`: the scheduler decides to stop the process from running. We add `:sleep` as a marker for this in the stack.
 - `in`: the scheduler decides it's this pid's turn to run again, so we remove the `:sleep` marker from the stack.
+
+### Different backends
+
+Flama supports different output formats (svg or speedscope). To this end, the Flama GenServer delegates both the state representation, the state processing and the file output to backend modules:
+
+```mermaid
+flowchart LR
+
+flama[Flama] --spawn, start, stop--> tracer[Flama.Tracer \n Genserver]
+tracer --init, handle_event, dump--> StackCollapser
+tracer --init, handle_event, dump--> SpeedScope
+BEAM --events--> tracer
+```
+
+By default, the `StackCollapser` module is used, but the `SpeedScope` one can be configured by adding `backend: Speedscope` to the `Flama.run` options.
