@@ -14,7 +14,7 @@ defmodule Tracer do
   ###########################
 
   def start_trace(target, opts \\ []) do
-    with {:ok, tracer} <- GenServer.start_link(__MODULE__, {target, opts}) do
+    with {:ok, tracer} <- GenServer.start_link(__MODULE__, opts) do
       match_spec = [{:_, [], [{:message, {{:cp, {:caller}}}}]}]
       :erlang.trace_pattern(:on_load, match_spec, [:local])
       :erlang.trace_pattern({:_, :_, :_}, match_spec, [:local])
@@ -43,9 +43,10 @@ defmodule Tracer do
   ###########################
   ### GENSERVER CALLBACKS
   ###########################
-  def init({pid, opts}) do
+
+  def init(opts) do
     backend = Keyword.get(opts, :backend, @default_backend)
-    {:ok, apply(backend, :initial_state, [pid, opts])}
+    {:ok, apply(backend, :initial_state, [opts])}
   end
 
   def handle_info(t, state) when elem(t, 0) === :trace_ts do
