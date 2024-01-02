@@ -1,4 +1,4 @@
-# Tracer
+# Flama
 
 An elixir tracer that produces flamegraph-friendly outputs. Inspired in [eflame](https://github.com/proger/eflame), a tracer for erlang. Uses [`:erlang.trace/3`](https://www.erlang.org/doc/man/erlang#trace-3) to produce traces, parses them in a Genserver, outputs results to collapsed stack files.
 
@@ -35,13 +35,13 @@ They currently feature a simple example of stream processing.
 In elixir, if we want to produce a flamegraph for the execution of the function `my_function(arg1, arg2)`, we need to run:
 
 ```elixir
-Tracer.run({&my_function/2, [arg1, arg2]})
+Flama.run({&my_function/2, [arg1, arg2]})
 ```
 
 Additionally, if the function is in a different module, this can be specified as:
 
 ```elixir
-Tracer.run({SomeModule, :my_function, [arg1, arg2]})
+Flama.run({SomeModule, :my_function, [arg1, arg2]})
 ```
 
 ### Results
@@ -60,7 +60,7 @@ The resulting svg can be opened in an internet browser like Google Chrome, for i
 
 ## Architecture and design
 
-A simple call to `Tracer.run` will:
+A simple call to `Flama.run` will:
 
 1. Spawn a Tracer process.
 2. Activate BEAM tracing.
@@ -98,13 +98,13 @@ defmodule Example do
   end
 end
 
-Tracer.run({Example, :p, [10]})
+Flama.run({Example, :p, [10]})
 ```
 
 Conceptually speaking, what p does is compute a polinomial. For a certain x, it returns $10+4x+7x^2+3x^3$. But regarding execution:
 
-1. We call `Tracer.run`.
-2. `Tracer.run`, internally, calls `apply_fun`.
+1. We call `Flama.run`.
+2. `Flama.run`, internally, calls `apply_fun`.
 3. `apply_fun` calls `Example.p(10)`.
 4. `Example.p(10)` calls `M.eval_polinomial([10,4,7,3], 10)`.
 5. That function is just a helper for the tail recursive function `M.eval_polinomial([10,4,7,3], 10, 0, 0)`, where the last two values are accumulators.
@@ -112,7 +112,7 @@ Conceptually speaking, what p does is compute a polinomial. For a certain x, it 
 
 A simple flamegraph would contain all of this calls in order:
 
-- `Tracer.run` at the base
+- `Flama.run` at the base
 - `apply_fun`
 - `Example.p/1`
 - `M.eval_polinomial/2`
@@ -131,7 +131,7 @@ end
 
 Then our stack, after returning from `M.eval_polinomial` would build:
 
-- `Tracer.run` at the base
+- `Flama.run` at the base
 - `apply_fun`
 - `Example.p/1`
 - `do_something_else/1`
@@ -154,10 +154,10 @@ where `mfa` is a tuple of three elements: `{module, function, arity}`, which is 
 
 | caller              | called                     |
 | ------------------- | -------------------------- |
-| `{Tracer, :run, 2}` | `{Tracer, :apply_fun, 2}`  |
-| `{Tracer, :run, 2}` | `{Example, :p, 1}`         |
-| `{Tracer, :run, 2}` | `{M, :eval_polinomial, 2}` |
-| `{Tracer, :run, 2}` | `{M, :eval_polinomial, 4}` |
+| `{Flama, :run, 2}` | `{Flama, :apply_fun, 2}`  |
+| `{Flama, :run, 2}` | `{Example, :p, 1}`         |
+| `{Flama, :run, 2}` | `{M, :eval_polinomial, 2}` |
+| `{Flama, :run, 2}` | `{M, :eval_polinomial, 4}` |
 
 
 Up to this point, the caller remains in the `run` function. This happens because the `caller_mfa` is not the immediate caller, but the function we will return to once the current call is finished. This is important, as tail calls are functions that call another function as the absolute last thing they do. As such, they are subject to TCO (tail call optimization), meaning their stack frame is deleted when doing the call. This is reflected in the examples, as `apply_fun/2`, `Example.p/1`, `eval_polinomial/2`, all perform tail calls. 
