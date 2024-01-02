@@ -221,3 +221,5 @@ BEAM --events--> tracer
 ```
 
 By default, the `StackCollapser` module is used, but the `SpeedScope` one can be configured by adding `backend: Speedscope` to the `Flama.run` options.
+
+These modules only hold the logic for each format, but they don't spawn new processes, they are executed in the `Flama.Tracer` genserver.
