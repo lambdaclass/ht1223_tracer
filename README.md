@@ -160,7 +160,7 @@ where `mfa` is a tuple of three elements: `{module, function, arity}`, which is 
 | `{Tracer, :run, 2}` | `{M, :eval_polinomial, 4}` |
 
 
-Up to this point, the caller remains the `run` function. This happens because the `caller_mfa` is not the immediate caller, but the function where we will return once the current call is finished. This is important, as tail calls, which is functions that call another function as the absolute last thing they do. Tail calls are subject to TCO (tail call optimization), which means that their stack frame is deleted when doing the call. This is reflected in the examples, as `apply_fun`, `Example.p`, `eval_polinomial/2`, all perform tail calls. 
+Up to this point, the caller remains in the `run` function. This happens because the `caller_mfa` is not the immediate caller, but the function we will return to once the current call is finished. This is important, as tail calls are functions that call another function as the absolute last thing they do. As such, they are subject to TCO (tail call optimization), meaning their stack frame is deleted when doing the call. This is reflected in the examples, as `apply_fun/2`, `Example.p/1`, `eval_polinomial/2`, all perform tail calls. 
 
 However, `:eval_polinomial/4` calls the exponentiation in a simple call, as its return value will be used for the recursive call. That means that we have the following sequence:
 
