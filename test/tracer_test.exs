@@ -1,9 +1,9 @@
-defmodule FlamaTest do
+defmodule TracerTest do
   use ExUnit.Case
-  doctest Flama
+  doctest Tracer
 
   test "run example" do
-    Flama.run({__MODULE__, :dummy_load, []})
+    Tracer.run({__MODULE__, :dummy_load, []})
   end
 
   @dummy_list 0..100_000 |> Enum.to_list()
