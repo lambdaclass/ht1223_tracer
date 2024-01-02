@@ -13,20 +13,8 @@ defmodule Tracer do
   ### PUBLIC API
   ###########################
 
-  def run(mfa, opts \\ [])
-  def run({m, f, a}, opts), do: run({{m, f}, a}, opts)
-
-  def run({fun, args}, opts) when is_list(opts) do
-    {:ok, tracer} = Tracer.start_trace(self(), opts)
-    apply_fun(fun, args)
-    Tracer.stop_trace(tracer, self())
-  end
-
-  defp apply_fun({m, f}, args) when is_atom(m) and is_atom(f), do: apply(m, f, args)
-  defp apply_fun(fun, args) when is_function(fun, length(args)), do: apply(fun, args)
-
   def start_trace(target, opts \\ []) do
-    with {:ok, tracer} <- GenServer.start_link(__MODULE__, {target, opts}) do
+    with {:ok, tracer} <- GenServer.start_link(__MODULE__, opts) do
       match_spec = [{:_, [], [{:message, {{:cp, {:caller}}}}]}]
       :erlang.trace_pattern(:on_load, match_spec, [:local])
       :erlang.trace_pattern({:_, :_, :_}, match_spec, [:local])
@@ -55,18 +43,19 @@ defmodule Tracer do
   ###########################
   ### GENSERVER CALLBACKS
   ###########################
-  def init({pid, opts}) do
+
+  def init(opts) do
     backend = Keyword.get(opts, :backend, @default_backend)
-    {:ok, apply(backend, :initial_state, [pid, opts])}
+    {:ok, {apply(backend, :initial_state, [opts]), backend}}
   end
 
-  def handle_info(t, state) when elem(t, 0) === :trace_ts do
-    new_state = StackCollapser.handle_event(t, state)
-    {:noreply, new_state}
+  def handle_info(t, {state, backend}) when elem(t, 0) === :trace_ts do
+    new_state = apply(backend, :handle_event, [t, state])
+    {:noreply, {new_state, backend}}
   end
 
-  def handle_call(:finalize, _, state) do
-    StackCollapser.finalize(state)
-    {:reply, :ok, state}
+  def handle_call(:finalize, _, {state, backend}) do
+    apply(backend, :finalize, [state])
+    {:reply, :ok, {state, backend}}
   end
 end
