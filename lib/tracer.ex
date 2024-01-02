@@ -13,18 +13,6 @@ defmodule Tracer do
   ### PUBLIC API
   ###########################
 
-  def run(mfa, opts \\ [])
-  def run({m, f, a}, opts), do: run({{m, f}, a}, opts)
-
-  def run({fun, args}, opts) when is_list(opts) do
-    {:ok, tracer} = Tracer.start_trace(self(), opts)
-    apply_fun(fun, args)
-    Tracer.stop_trace(tracer, self())
-  end
-
-  defp apply_fun({m, f}, args) when is_atom(m) and is_atom(f), do: apply(m, f, args)
-  defp apply_fun(fun, args) when is_function(fun, length(args)), do: apply(fun, args)
-
   def start_trace(target, opts \\ []) do
     with {:ok, tracer} <- GenServer.start_link(__MODULE__, opts) do
       match_spec = [{:_, [], [{:message, {{:cp, {:caller}}}}]}]
