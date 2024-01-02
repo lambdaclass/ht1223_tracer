@@ -3,20 +3,32 @@ defmodule StackCollapser do
   Stack collapsing implementation.
   """
 
-  @type state() :: %{last_timestamp: integer(), trace_tree: %{}, stack: [mfa()], pid: pid()}
+  @opaque state() :: %{
+            last_ts: integer(),
+            samples: %{[mfa() | :sleep] => non_neg_integer()},
+            stack: [mfa()],
+            pid: pid(),
+            opts: opts_map()
+          }
+  @opaque opts_map() :: %{file: Path.t(), sample_size: non_neg_integer()}
+  @type opts() :: [file: Path.t(), sample_size: non_neg_integer()]
 
   @default_output_file "stacks.out"
+  @default_sample_size 1_000
 
   ###########################
   ### PUBLIC API
   ###########################
 
-  def initial_state(pid, opts) when is_pid(pid),
-    do: %{pid: pid, last_timestamp: nil, trace_tree: %{}, stack: [], opts: opts}
-
-  def finalize(%{trace_tree: tree, opts: opts}) do
+  def initial_state(pid, opts) when is_pid(pid) do
     file = Keyword.get(opts, :output_file, @default_output_file)
-    dump_trace_tree(tree, file)
+    sample_size = Keyword.get(opts, :sample_size, @default_sample_size)
+    parsed_opts = %{file: file, sample_size: sample_size}
+    %{pid: pid, last_ts: nil, samples: %{}, stack: [], opts: parsed_opts}
+  end
+
+  def finalize(%{samples: samples, opts: %{file: file}}) do
+    dump_trace(samples, file)
   end
 
   def handle_event(trace_event, state)
@@ -83,61 +95,48 @@ defmodule StackCollapser do
   ### PRIVATE FUNCTIONS
   ###########################
 
-  defp update_state(%{last_timestamp: nil} = state, ts, new_stack) do
-    %{state | last_timestamp: ts, stack: new_stack}
+  defp update_state(%{last_ts: nil} = state, ts, new_stack) do
+    %{state | last_ts: ts, stack: new_stack}
   end
 
   defp update_state(%{stack: []} = state, ts, new_stack) do
-    %{state | last_timestamp: ts, stack: new_stack}
+    %{state | last_ts: ts, stack: new_stack}
   end
 
-  defp update_state(%{last_timestamp: ts} = state, ts, _), do: state
+  defp update_state(%{last_ts: ts} = state, ts, _), do: state
 
-  defp update_state(%{stack: old_stack, last_timestamp: old_ts} = state, ts, new_stack) do
-    new_tree =
-      [state.pid | :lists.reverse(old_stack)]
-      |> update_tree(state.trace_tree, ts - old_ts)
+  defp update_state(%{stack: old_stack, last_ts: old_ts, opts: opts} = state, ts, new_stack) do
+    %{sample_size: sample_size} = opts
+    delta = div(ts - old_ts, sample_size)
 
-    %{state | trace_tree: new_tree, last_timestamp: ts, stack: new_stack}
+    if delta < 1 do
+      %{state | stack: new_stack}
+    else
+      new_samples = Map.update(state.samples, old_stack, delta, &(&1 + delta))
+      new_ts = old_ts + delta * sample_size
+      %{state | samples: new_samples, last_ts: new_ts, stack: new_stack}
+    end
   end
 
-  defp update_tree([mfa], tree, time) do
-    Map.update(tree, mfa, {time, %{}}, fn {acc, children} -> {acc + time, children} end)
-  end
-
-  defp update_tree([mfa | rest], tree, time) do
-    {acc, subtree} = Map.get(tree, mfa, {0, %{}})
-
-    update_tree(rest, subtree, time)
-    |> then(&{acc, &1})
-    |> then(&Map.put(tree, mfa, &1))
-  end
-
-  defp dump_trace_tree(tree, file) do
-    tree
-    |> flatten_tree()
-    |> then(&File.write!(file, &1))
-  end
-
-  defp flatten_tree(tree, stack \\ []) do
-    tree
-    |> Enum.map(fn {mfa, {time, children}} ->
-      id = stringify_id(mfa)
-      stack = [id | stack]
-      subtree = flatten_tree(children, stack)
-      [format_entry(stack, time) | subtree]
+  defp dump_trace(samples, file) do
+    samples
+    |> Enum.map(fn {stack, sample_count} ->
+      stack
+      |> Enum.map(&stringify_id/1)
+      |> format_entry(sample_count)
     end)
+    |> then(&File.write!(file, &1))
   end
 
   defp format_entry(_, 0), do: ""
 
-  defp format_entry(stack, time) do
+  defp format_entry(stack, sample_count) do
     :lists.reverse(stack)
     |> Stream.intersperse(";")
-    |> Enum.concat([" #{time}\n"])
+    |> Enum.concat([" #{sample_count}\n"])
   end
 
   defp stringify_id({m, f, a}), do: "#{m}.#{f}/#{a}"
-  defp stringify_id(pid) when is_pid(pid), do: :erlang.pid_to_list(pid) |> List.to_string()
+  defp stringify_id(pid) when is_pid(pid), do: :erlang.pid_to_list(pid)
   defp stringify_id(:sleep), do: "sleep"
 end
