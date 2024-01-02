@@ -46,16 +46,16 @@ defmodule Tracer do
 
   def init(opts) do
     backend = Keyword.get(opts, :backend, @default_backend)
-    {:ok, apply(backend, :initial_state, [opts])}
+    {:ok, {apply(backend, :initial_state, [opts]), backend}}
   end
 
-  def handle_info(t, state) when elem(t, 0) === :trace_ts do
-    new_state = StackCollapser.handle_event(t, state)
-    {:noreply, new_state}
+  def handle_info(t, {state, backend}) when elem(t, 0) === :trace_ts do
+    new_state = apply(backend, :handle_event, [t, state])
+    {:noreply, {new_state, backend}}
   end
 
-  def handle_call(:finalize, _, state) do
-    StackCollapser.finalize(state)
-    {:reply, :ok, state}
+  def handle_call(:finalize, _, {state, backend}) do
+    apply(backend, :finalize, [state])
+    {:reply, :ok, {state, backend}}
   end
 end
